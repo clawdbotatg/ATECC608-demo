@@ -12,3 +12,4 @@ pi/*.log
 
 # misc
 .DS_Store
+pi/signer.pid
