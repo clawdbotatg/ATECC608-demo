@@ -17,6 +17,10 @@ Usage:
       [--mock] [--confirm | --button 17] [--name "pi-atecc608"] [--once] [--allow-lock]
 
 Hardware options: --i2c-bus 1  --i2c-addr 0x60 (7-bit, 0x35 for TrustFLEX/TNG parts)  --slot 0
+
+Fresh chip? A blank ATECC608 refuses GenKey and Sign (error 0xF4) until its CONFIG zone is locked,
+once, permanently. The DATA zone is left unlocked so GenKey can be re-run. README.md in this folder
+walks through it with the real outputs.
 """
 import argparse
 import json

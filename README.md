@@ -39,8 +39,27 @@ key, pair it with the vault, fund the vault. The browser queues each job, the Pi
 back. Then on **Send** type `atg.eth` and `5`, press **Send to chip**, and watch
 Requested → Signed on chip → Relayed → Confirmed.
 
-The config zone must be locked before the ATECC608 will make or use a key. That is permanent and
-normal. The data zone is left unlocked, so "Generate a new key" works any number of times.
+## You have a fresh chip? Read this first
+
+![Adafruit ATECC608 breakout on a Raspberry Pi 3 B+](docs/pi-atecc608.jpg)
+
+A new ATECC608 breakout is blank and unlocked, and **an unlocked ATECC608 refuses to make a key or
+sign** (every crypto command returns `0xF4`). You must lock its **config zone** once. That is
+permanent, and it is normal: every chip in use is config-locked. It does not put a key in and does
+not stop you making new keys later. The **data zone stays unlocked**, so "Generate a new key" works
+forever.
+
+The full walkthrough with real outputs from the chip we did this to is in
+**[`pi/README.md`](pi/README.md)**. Short version:
+
+1. Wire SDA/SCL/3V3/GND, find it at I2C `0x60`.
+2. `pip3 install --user --break-system-packages cryptoauthlib requests cryptography`
+3. `./start.sh http://<laptop-ip>:3000 --i2c-addr 0x60 --allow-lock`
+4. In the app, /setup: **Lock config zone** → **Generate key** → **Pair key** → **Mint into vault**.
+5. /send: 5 USDS to `atg.eth`. The chip signs in ~100 ms; the relay settles it.
+
+Verified 2026-09-04 on an ATECC608A (Adafruit STEMMA QT breakout, Raspberry Pi 3 B+): locked
+config, generated a key, paired, signed, settled onchain, data zone never locked.
 
 ## Why P-256
 
@@ -62,8 +81,10 @@ either way; the tests run at ~110k gas per transfer.
 | `app/packages/nextjs/app/setup/page.tsx` | Setup: lock config, generate key, pair, fund |
 | `app/packages/nextjs/app/api/*` | `device` (announce), `commands` (jobs for the Pi), `pair` (setSigner), `fund` (local mint), `requests` (queue + digest), `requests/[id]/signature` (verify + relay), `state` |
 | `app/packages/nextjs/services/chip/*` | JSON-file store, chain clients, relay |
-| `pi/signer.py` | announce, run setup jobs (status / genkey / lock-config), poll, sign, post. `--mock`, `--confirm`, `--button` |
+| `pi/signer.py` | announce, run setup jobs (status / genkey / lock-config), poll, sign, post. `--mock`, `--confirm`, `--button`, `--allow-lock` |
+| `pi/start.sh` | background the signer on the Pi (pid file + log) |
 | `pi/provision.py` | CLI fallback for the setup steps (config lock + GenKey; data zone left unlocked) |
+| `pi/README.md` | **the fresh-chip guide**: what locking means, every step with real outputs, every error |
 
 ## Trust model
 
