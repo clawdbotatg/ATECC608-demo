@@ -1,3 +1,4 @@
+import { relayerKeyFromKeystore } from "./keystore";
 import {
   type Address,
   Chain,
@@ -19,7 +20,8 @@ import { getAlchemyHttpUrl } from "~~/utils/scaffold-eth/networks";
  * Server-side chain access for the relay. Everything here runs in Next.js route handlers only.
  *
  * Relay account:
- *   - live chains: RELAYER_PRIVATE_KEY in .env.local (never committed)
+ *   - live chains: RELAYER_KEYSTORE=<foundry keystore name> (+ password) in .env.local — preferred,
+ *                  the key stays encrypted on disk. RELAYER_PRIVATE_KEY also works.
  *   - localhost:   no key at all. Anvil's dev accounts are unlocked, so we send eth_sendTransaction
  *                  from account #9 — the same account `yarn deploy` uses, so it is also the ChipAccount
  *                  admin and can pair the chip's key automatically.
@@ -47,7 +49,7 @@ export function publicClient(): PublicClient {
 let _wallet: WalletClient | undefined;
 export function relayClient(): WalletClient {
   if (_wallet) return _wallet;
-  const pk = process.env.RELAYER_PRIVATE_KEY;
+  const pk = process.env.RELAYER_PRIVATE_KEY || relayerKeyFromKeystore();
   if (pk) {
     _wallet = createWalletClient({
       chain: targetChain,
