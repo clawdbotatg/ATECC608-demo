@@ -1,0 +1,11 @@
+# Talks to the app
+requests>=2.31
+
+# Software P-256 key for --mock mode (also used by the Foundry tests)
+cryptography>=42
+
+# Real chip. Needs the compiled cryptoauthlib shared library, see README.md
+cryptoauthlib>=20240418
+
+# Optional: physical "approve" button on a GPIO pin (--button 17)
+# gpiozero>=2.0

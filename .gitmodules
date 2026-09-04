@@ -1,0 +1,9 @@
+[submodule "app/packages/foundry/lib/forge-std"]
+	path = app/packages/foundry/lib/forge-std
+	url = https://github.com/foundry-rs/forge-std
+[submodule "app/packages/foundry/lib/openzeppelin-contracts"]
+	path = app/packages/foundry/lib/openzeppelin-contracts
+	url = https://github.com/OpenZeppelin/openzeppelin-contracts
+[submodule "app/packages/foundry/lib/solidity-bytes-utils"]
+	path = app/packages/foundry/lib/solidity-bytes-utils
+	url = https://github.com/gnsps/solidity-bytes-utils

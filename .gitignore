@@ -1,0 +1,14 @@
+# secrets / runtime
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# pi
+pi/.mock_key.pem
+pi/__pycache__/
+pi/*.log
+
+# misc
+.DS_Store
