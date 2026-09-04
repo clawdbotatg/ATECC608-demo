@@ -8,6 +8,7 @@ The chip holds a NIST P-256 key that owns the ChipAccount contract. This script:
   2. polls the app for transfers waiting for a signature (GET /api/requests?status=pending)
   3. signs the 32-byte EIP-712 digest with the chip (atcab_sign, or a software key in --mock mode)
   4. posts the signature back; the app's relay pays gas and settles it onchain
+  5. runs setup jobs queued from the app's /setup page (status, genkey, lock-config)
 
 Usage:
   python3 signer.py pubkey [--mock]                       print the signer public key
@@ -76,6 +77,21 @@ class SoftSigner:
         n = self.key.public_key().public_numbers()
         return n.x.to_bytes(32, "big") + n.y.to_bytes(32, "big")
 
+    def status(self) -> dict:
+        return {"configLocked": True, "dataLocked": False, "slot": 0, "hasKey": True, "note": "software key (mock)"}
+
+    def genkey(self) -> bytes:
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric import ec
+
+        self.key = ec.generate_private_key(ec.SECP256R1())
+        with open(MOCK_KEY_FILE, "wb") as f:
+            f.write(self.key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
+        return self.pubkey()
+
+    def lock_config(self) -> str:
+        return "mock signer: nothing to lock"
+
     def sign_digest(self, digest: bytes):
         from cryptography.hazmat.primitives import hashes
         from cryptography.hazmat.primitives.asymmetric import ec
@@ -86,9 +102,27 @@ class SoftSigner:
 
 
 class AteccSigner:
-    """ATECC608 over I2C via Microchip's cryptoauthlib python bindings (pip install cryptoauthlib)."""
+    """ATECC608 over I2C via Microchip's cryptoauthlib python bindings (pip install cryptoauthlib).
+
+    Lock model used by this demo: the CONFIG zone must be locked once (the chip refuses GenKey/Sign
+    otherwise). The DATA zone is left unlocked so GenKey can be re-run on the slot any time.
+    """
 
     name = "atecc608"
+
+    # Microchip's ATECC608 reference config (cryptoauthlib test/api_calib/test_calib_config.c).
+    # Slot 0: P-256 private key, external sign enabled, GenKey allowed. Bytes 0-15 and 84-87 are
+    # read-only and skipped by atcab_write_config_zone.
+    CONFIG = bytes([
+        0x01, 0x23, 0x00, 0x00, 0x00, 0x00, 0x60, 0x00, 0x04, 0x05, 0x06, 0x07, 0xEE, 0x01, 0x01, 0x00,
+        0xC0, 0x00, 0xA1, 0x00, 0xAF, 0x2F, 0xC4, 0x44, 0x87, 0x20, 0xC4, 0xF4, 0x8F, 0x0F, 0x0F, 0x0F,
+        0x9F, 0x8F, 0x83, 0x64, 0xC4, 0x44, 0xC4, 0x64, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F,
+        0x0F, 0x0F, 0x0F, 0x0F, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF,
+        0x00, 0x00, 0x00, 0x00, 0xFF, 0x84, 0x03, 0xBC, 0x09, 0x69, 0x76, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0x0E, 0x40, 0x00, 0x00, 0x00, 0x00,
+        0x33, 0x00, 0x1C, 0x00, 0x13, 0x00, 0x1C, 0x00, 0x3C, 0x00, 0x3A, 0x10, 0x1C, 0x00, 0x33, 0x00,
+        0x1C, 0x00, 0x1C, 0x00, 0x38, 0x00, 0x30, 0x00, 0x3C, 0x00, 0x3C, 0x00, 0x32, 0x00, 0x30, 0x00,
+    ])
 
     def __init__(self, bus=1, addr7=0x60, slot=0):
         import cryptoauthlib as cal
@@ -101,33 +135,67 @@ class AteccSigner:
         # cryptoauthlib stores the address in 8-bit form (7-bit address << 1)
         cfg.cfg.atcai2c.address = addr7 << 1
         cfg.devtype = cal.get_device_type_id("ATECC608")
-        status = cal.atcab_init(cfg)
-        if status != cal.ATCA_SUCCESS:
-            raise RuntimeError(f"atcab_init failed: 0x{status:02X} (check wiring, i2cdetect -y {bus}, address)")
+        self._check(cal.atcab_init(cfg), f"atcab_init (check wiring, i2cdetect -y {bus}, --i2c-addr)")
         rev = bytearray(4)
-        cal.atcab_info(rev)
+        self._check(cal.atcab_info(rev), "atcab_info")
+        sn = bytearray(9)
+        self._check(cal.atcab_read_serial_number(sn), "read serial")
         self.revision = rev.hex()
-        cfg_locked = cal.AtcaReference(False)
-        data_locked = cal.AtcaReference(False)
-        cal.atcab_is_locked(cal.LOCK_ZONE_CONFIG, cfg_locked)
-        cal.atcab_is_locked(cal.LOCK_ZONE_DATA, data_locked)
-        if not bool(cfg_locked.value) or not bool(data_locked.value):
-            raise RuntimeError(
-                "chip is not provisioned (config/data zone unlocked). Run provision.py first."
-            )
+        self.serial = sn.hex()
+
+    def _check(self, status, what):
+        if status != self.cal.ATCA_SUCCESS:
+            raise RuntimeError(f"{what} failed: 0x{status:02X}")
+
+    def _locked(self, zone) -> bool:
+        ref = self.cal.AtcaReference(False)
+        self._check(self.cal.atcab_is_locked(zone, ref), "is_locked")
+        return bool(ref.value)
+
+    def status(self) -> dict:
+        cfg = self._locked(self.cal.LOCK_ZONE_CONFIG)
+        data = self._locked(self.cal.LOCK_ZONE_DATA)
+        has_key = False
+        if cfg:
+            try:
+                self.pubkey()
+                has_key = True
+            except RuntimeError:
+                pass
+        return {
+            "serial": self.serial,
+            "revision": self.revision,
+            "configLocked": cfg,
+            "dataLocked": data,
+            "slot": self.slot,
+            "hasKey": has_key,
+        }
 
     def pubkey(self) -> bytes:
+        if not self._locked(self.cal.LOCK_ZONE_CONFIG):
+            raise RuntimeError("config zone is not locked; the chip has no usable key yet (Setup page, step 1)")
         pub = bytearray(64)
-        status = self.cal.atcab_get_pubkey(self.slot, pub)
-        if status != self.cal.ATCA_SUCCESS:
-            raise RuntimeError(f"atcab_get_pubkey failed: 0x{status:02X}")
+        self._check(self.cal.atcab_get_pubkey(self.slot, pub), "atcab_get_pubkey")
         return bytes(pub)
+
+    def genkey(self) -> bytes:
+        if not self._locked(self.cal.LOCK_ZONE_CONFIG):
+            raise RuntimeError("lock the config zone first")
+        pub = bytearray(64)
+        self._check(self.cal.atcab_genkey(self.slot, pub), f"atcab_genkey slot {self.slot}")
+        return bytes(pub)
+
+    def lock_config(self) -> str:
+        """Write the reference config (if still writable) and lock the config zone. Permanent."""
+        if self._locked(self.cal.LOCK_ZONE_CONFIG):
+            return "config zone already locked"
+        self._check(self.cal.atcab_write_config_zone(self.CONFIG), "atcab_write_config_zone")
+        self._check(self.cal.atcab_lock_config_zone(), "atcab_lock_config_zone")
+        return "config zone locked (data zone left unlocked)"
 
     def sign_digest(self, digest: bytes):
         sig = bytearray(64)
-        status = self.cal.atcab_sign(self.slot, digest, sig)
-        if status != self.cal.ATCA_SUCCESS:
-            raise RuntimeError(f"atcab_sign failed: 0x{status:02X}")
+        self._check(self.cal.atcab_sign(self.slot, digest, sig), "atcab_sign")
         r = int.from_bytes(sig[:32], "big")
         s = int.from_bytes(sig[32:], "big")
         return low_s(r, s)
@@ -173,23 +241,57 @@ def wait_for_approval(args, req):
     return True
 
 
+def key_hex(signer):
+    try:
+        pub = signer.pubkey()
+    except RuntimeError as e:
+        print(f"[{signer.name}] no key: {e}", file=sys.stderr)
+        return None, None
+    return "0x" + pub[:32].hex(), "0x" + pub[32:].hex()
+
+
 def cmd_run(args):
     import requests
 
     signer = make_signer(args)
-    pub = signer.pubkey()
-    qx, qy = "0x" + pub[:32].hex(), "0x" + pub[32:].hex()
     app = args.app.rstrip("/")
-    print(f"[{signer.name}] public key\n  qx {qx}\n  qy {qy}")
+    state = {"qx": None, "qy": None}
 
     def announce():
-        body = {"name": args.name, "qx": qx, "qy": qy, "backend": signer.name}
+        state["qx"], state["qy"] = key_hex(signer)
+        body = {"name": args.name, "backend": signer.name, "chip": signer.status()}
+        if state["qx"]:
+            body.update(qx=state["qx"], qy=state["qy"])
         resp = requests.post(f"{app}/api/device", json=body, timeout=30)
         resp.raise_for_status()
         info = resp.json()
-        state = "paired" if info.get("paired") else "pairing…"
-        print(f"[{signer.name}] announced to {app} -> {state}" + (f" (tx {info['txHash']})" if info.get("txHash") else ""))
-        return info
+        what = "paired" if info.get("paired") else ("not paired (Setup page -> Pair key)" if state["qx"] else "no key (Setup page)")
+        print(f"[{signer.name}] announced to {app} -> {what}")
+        if state["qx"]:
+            print(f"  qx {state['qx']}\n  qy {state['qy']}")
+
+    def run_command(cmd):
+        cid, ctype = cmd["id"], cmd["type"]
+        print(f"\n[{signer.name}] command {ctype} ({cid})")
+        requests.post(f"{app}/api/commands/{cid}/result", json={"status": "running"}, timeout=15)
+        try:
+            if ctype == "status":
+                result = signer.status()
+            elif ctype == "genkey":
+                pub = signer.genkey()
+                result = {"qx": "0x" + pub[:32].hex(), "qy": "0x" + pub[32:].hex()}
+                print(f"  new key\n  qx {result['qx']}\n  qy {result['qy']}")
+            elif ctype == "lock-config":
+                result = {"message": signer.lock_config()}
+                print(f"  {result['message']}")
+            else:
+                raise RuntimeError(f"unknown command {ctype}")
+            requests.post(f"{app}/api/commands/{cid}/result", json={"ok": True, "result": result}, timeout=15)
+            print("  done")
+        except Exception as e:
+            print(f"  failed: {e}")
+            requests.post(f"{app}/api/commands/{cid}/result", json={"ok": False, "error": str(e)}, timeout=15)
+        announce()  # status or key may have changed
 
     last_announce = 0
     seen_failed = set()
@@ -198,6 +300,16 @@ def cmd_run(args):
             if time.time() - last_announce > 30:
                 announce()
                 last_announce = time.time()
+
+            cmds = requests.get(f"{app}/api/commands", params={"status": "pending"}, timeout=15)
+            cmds.raise_for_status()
+            for cmd in cmds.json().get("commands", []):
+                run_command(cmd)
+                last_announce = time.time()
+
+            if not state["qx"]:
+                time.sleep(args.interval)
+                continue
             resp = requests.get(f"{app}/api/requests", params={"status": "pending"}, timeout=15)
             resp.raise_for_status()
             pending = [r for r in resp.json().get("requests", []) if r["id"] not in seen_failed]
@@ -213,7 +325,7 @@ def cmd_run(args):
                 t0 = time.time()
                 r, s = signer.sign_digest(hexbytes(req["digest"], 32))
                 print(f"  signed in {1000 * (time.time() - t0):.0f} ms\n  r {r:064x}\n  s {s:064x}")
-                body = {"r": "0x%064x" % r, "s": "0x%064x" % s, "qx": qx, "qy": qy}
+                body = {"r": "0x%064x" % r, "s": "0x%064x" % s, "qx": state["qx"], "qy": state["qy"]}
                 post = requests.post(f"{app}/api/requests/{req['id']}/signature", json=body, timeout=120)
                 if post.ok:
                     out = post.json()

@@ -1,75 +1,56 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isHex } from "viem";
-import { isLocal, relayerAddress } from "~~/services/chip/chain";
-import { admin, onchainSigner, setSigner } from "~~/services/chip/relay";
+import { relayerAddress } from "~~/services/chip/chain";
+import { onchainSigner } from "~~/services/chip/relay";
 import { readStore, updateStore } from "~~/services/chip/store";
-import { DeviceInfo } from "~~/services/chip/types";
+import { ChipStatus, DeviceInfo } from "~~/services/chip/types";
 
 export const dynamic = "force-dynamic";
 
 const isBytes32 = (v: unknown): v is `0x${string}` => typeof v === "string" && isHex(v) && v.length === 66;
 
-/** The Pi calls this on boot (and every 30 s) with its chip public key. */
+function sameKey(a?: { qx?: string; qy?: string }, b?: { qx?: string; qy?: string }) {
+  return (
+    !!a?.qx && !!b?.qx && a.qx.toLowerCase() === b.qx!.toLowerCase() && a.qy!.toLowerCase() === b.qy!.toLowerCase()
+  );
+}
+
+/** The Pi calls this on boot and every 30 s: "here is my key (if any) and my chip status". */
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
-  const { qx, qy } = body;
-  if (!isBytes32(qx) || !isBytes32(qy)) {
+  const hasKey = isBytes32(body.qx) && isBytes32(body.qy);
+  if ((body.qx || body.qy) && !hasKey) {
     return NextResponse.json({ error: "qx and qy must be 0x-prefixed 32-byte hex" }, { status: 400 });
   }
   const name = typeof body.name === "string" && body.name.trim() ? body.name.trim().slice(0, 64) : "device";
   const backend = typeof body.backend === "string" ? body.backend.slice(0, 32) : "unknown";
+  const chip: ChipStatus | undefined = body.chip && typeof body.chip === "object" ? body.chip : undefined;
 
   const now = Date.now();
   let device: DeviceInfo | undefined;
   updateStore(store => {
     const prev = store.device;
-    const sameKey = prev && prev.qx.toLowerCase() === qx.toLowerCase() && prev.qy.toLowerCase() === qy.toLowerCase();
+    const same = sameKey(prev, body);
     device = {
       name,
       backend,
-      qx,
-      qy,
-      firstSeen: sameKey ? prev!.firstSeen : now,
+      qx: hasKey ? body.qx : undefined,
+      qy: hasKey ? body.qy : undefined,
+      firstSeen: prev?.firstSeen ?? now,
       lastSeen: now,
-      pairTxHash: sameKey ? prev!.pairTxHash : undefined,
+      pairTxHash: same ? prev!.pairTxHash : undefined,
+      chip: chip ?? prev?.chip,
     };
     store.device = device;
   });
 
-  // Pair onchain if the contract does not already trust this key.
-  const onchain = await onchainSigner();
-  const matches = onchain.qx.toLowerCase() === qx.toLowerCase() && onchain.qy.toLowerCase() === qy.toLowerCase();
-  if (matches) return NextResponse.json({ paired: true, device, relayer: relayerAddress() });
-
-  const adminAddr = await admin();
-  if (adminAddr.toLowerCase() !== relayerAddress().toLowerCase()) {
-    return NextResponse.json({
-      paired: false,
-      device,
-      error: `contract admin is ${adminAddr}, relay is ${relayerAddress()} — call setSigner(qx, qy) from the admin (or set CHIP_PUBKEY_X/Y and redeploy)`,
-    });
-  }
-  try {
-    const txHash = await setSigner(qx, qy);
-    updateStore(store => {
-      if (store.device) store.device.pairTxHash = txHash;
-    });
-    return NextResponse.json({ paired: true, txHash, device, relayer: relayerAddress(), isLocal });
-  } catch (e: any) {
-    return NextResponse.json(
-      { paired: false, device, error: e?.shortMessage || e?.message || String(e) },
-      { status: 500 },
-    );
-  }
+  const onchain = await onchainSigner().catch(() => undefined);
+  const paired = hasKey && !!onchain && sameKey(onchain, body);
+  return NextResponse.json({ paired, device, relayer: relayerAddress() });
 }
 
 export async function GET() {
   const { device } = readStore();
   const onchain = await onchainSigner().catch(() => undefined);
-  const matches =
-    !!device &&
-    !!onchain &&
-    onchain.qx.toLowerCase() === device.qx.toLowerCase() &&
-    onchain.qy.toLowerCase() === device.qy.toLowerCase();
-  return NextResponse.json({ device, onchain, paired: matches });
+  return NextResponse.json({ device, onchain, paired: sameKey(onchain, device) });
 }

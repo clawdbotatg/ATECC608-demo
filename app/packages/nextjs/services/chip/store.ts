@@ -1,4 +1,4 @@
-import { Store, TransferRequest } from "./types";
+import { Command, Store, TransferRequest } from "./types";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 
@@ -16,11 +16,12 @@ export function readStore(): Store {
   if (existsSync(FILE)) {
     try {
       cache = JSON.parse(readFileSync(FILE, "utf8")) as Store;
+      cache.commands ??= [];
     } catch {
-      cache = { requests: [] };
+      cache = { requests: [], commands: [] };
     }
   } else {
-    cache = { requests: [] };
+    cache = { requests: [], commands: [] };
   }
   return cache;
 }
@@ -38,6 +39,8 @@ export function updateStore(fn: (store: Store) => void): Store {
   fn(store);
   store.requests.sort((a, b) => b.createdAt - a.createdAt);
   if (store.requests.length > MAX_REQUESTS) store.requests.length = MAX_REQUESTS;
+  store.commands.sort((a, b) => b.createdAt - a.createdAt);
+  if (store.commands.length > 50) store.commands.length = 50;
   writeStore(store);
   return store;
 }
@@ -53,6 +56,17 @@ export function patchRequest(id: string, patch: Partial<TransferRequest>): Trans
     if (!r) throw new Error(`request ${id} not found`);
     Object.assign(r, patch, { updatedAt: Date.now() });
     out = r;
+  });
+  return out!;
+}
+
+export function patchCommand(id: string, patch: Partial<Command>): Command {
+  let out: Command | undefined;
+  updateStore(store => {
+    const c = store.commands.find(x => x.id === id);
+    if (!c) throw new Error(`command ${id} not found`);
+    Object.assign(c, patch);
+    out = c;
   });
   return out!;
 }

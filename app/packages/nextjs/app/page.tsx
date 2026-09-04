@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { Address, AddressInput } from "@scaffold-ui/components";
 import type { NextPage } from "next";
 import { CpuChipIcon, PaperAirplaneIcon } from "@heroicons/react/24/outline";
@@ -104,9 +105,9 @@ const Home: NextPage = () => {
             <div className="flex items-center justify-between">
               <h2 className="card-title text-base">Device</h2>
               {device ? (
-                <span className={`badge ${device.paired ? "badge-success" : "badge-warning"}`}>
-                  {device.paired ? "paired" : "pairing…"}
-                </span>
+                <Link href="/setup" className={`badge ${device.paired ? "badge-success" : "badge-warning"}`}>
+                  {device.paired ? "paired" : "not paired"}
+                </Link>
               ) : (
                 <span className="badge badge-ghost">
                   <span className="loading loading-spinner loading-xs mr-1" />
@@ -119,10 +120,19 @@ const Home: NextPage = () => {
                 <div className="font-semibold">
                   {device.name} <span className="badge badge-ghost badge-sm">{device.backend}</span>
                 </div>
-                <div className="font-mono text-xs opacity-70">
-                  <div title={device.qx}>qx {short(device.qx, 8)}</div>
-                  <div title={device.qy}>qy {short(device.qy, 8)}</div>
-                </div>
+                {device.qx ? (
+                  <div className="font-mono text-xs opacity-70">
+                    <div title={device.qx}>qx {short(device.qx, 8)}</div>
+                    <div title={device.qy}>qy {short(device.qy, 8)}</div>
+                  </div>
+                ) : (
+                  <div className="text-xs">
+                    no key yet —{" "}
+                    <Link href="/setup" className="link">
+                      set up
+                    </Link>
+                  </div>
+                )}
                 <div className={`text-xs ${deviceOnline ? "opacity-60" : "text-warning"}`}>
                   {deviceOnline ? "online" : "not seen"} · last seen {ago(device.lastSeen, now)}
                 </div>

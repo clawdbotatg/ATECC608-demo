@@ -34,9 +34,13 @@ python3 signer.py run --mock --app http://localhost:3000          # no chip yet
 python3 signer.py run --app http://<mac-ip>:3000 --i2c-addr 0x60  # real chip, see pi/README.md
 ```
 
-The signer announces its public key. The app pairs it onchain (on localhost the relay is the contract
-admin). Type `atg.eth` and `5` in the UI, press **Send to chip**, watch the request go
+Open **/setup** and walk the four steps: lock the chip's config zone (once, real chip only), generate a
+key, pair it with the vault, fund the vault. The browser queues each job, the Pi runs it and reports
+back. Then on **Send** type `atg.eth` and `5`, press **Send to chip**, and watch
 Requested → Signed on chip → Relayed → Confirmed.
+
+The config zone must be locked before the ATECC608 will make or use a key. That is permanent and
+normal. The data zone is left unlocked, so "Generate a new key" works any number of times.
 
 ## Why P-256
 
@@ -54,11 +58,12 @@ either way; the tests run at ~110k gas per transfer.
 | `app/packages/foundry/contracts/MockUSDS.sol` | 18-decimal play USDS for localhost |
 | `app/packages/foundry/script/DeployChipDemo.s.sol` | deploy; env `CHIP_PUBKEY_X/Y`, `CHIP_ADMIN`, `USDS_ADDRESS` |
 | `app/packages/foundry/test/ChipAccount.t.sol` | 12 tests; signatures come from `pi/signer.py --mock` over ffi |
-| `app/packages/nextjs/app/page.tsx` | the UI: device / vault / relay status, send form, transfer timeline |
-| `app/packages/nextjs/app/api/*` | `device` (pairing), `requests` (queue + digest), `requests/[id]/signature` (verify + relay), `state` |
+| `app/packages/nextjs/app/page.tsx` | Send: device / vault / relay status, send form, transfer timeline |
+| `app/packages/nextjs/app/setup/page.tsx` | Setup: lock config, generate key, pair, fund |
+| `app/packages/nextjs/app/api/*` | `device` (announce), `commands` (jobs for the Pi), `pair` (setSigner), `fund` (local mint), `requests` (queue + digest), `requests/[id]/signature` (verify + relay), `state` |
 | `app/packages/nextjs/services/chip/*` | JSON-file store, chain clients, relay |
-| `pi/signer.py` | announce, poll, sign, post. `--mock`, `--confirm`, `--button` |
-| `pi/provision.py` | one-time chip config + lock + GenKey (irreversible) |
+| `pi/signer.py` | announce, run setup jobs (status / genkey / lock-config), poll, sign, post. `--mock`, `--confirm`, `--button` |
+| `pi/provision.py` | CLI fallback for the setup steps (config lock + GenKey; data zone left unlocked) |
 
 ## Trust model
 

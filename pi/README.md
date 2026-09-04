@@ -49,13 +49,17 @@ cmake -B build -DATCA_HAL_I2C=ON -DATCA_ATECC608_SUPPORT=ON -DATCA_BUILD_SHARED_
 cmake --build build -j4 && sudo cmake --install build && sudo ldconfig
 ```
 
-## Provision once (skip for TrustFLEX / Trust&Go parts, they ship locked)
+## Provision (skip for TrustFLEX / Trust&Go parts, they ship locked)
 
-Breakouts ship unlocked with no key. Locking is permanent.
+Breakouts ship unlocked with no key. Use the app's **/setup** page: start `signer.py run` first, then
+click Lock config → Generate key → Pair. Config lock is permanent and required by the chip. The data
+zone stays unlocked so Generate key can be re-run.
+
+CLI fallback:
 
 ```bash
 python3 provision.py --i2c-addr 0x60          # dry run
-python3 provision.py --i2c-addr 0x60 --yes    # write config, lock, GenKey slot 0, lock data
+python3 provision.py --i2c-addr 0x60 --yes    # write config, lock config, GenKey slot 0
 ```
 
 ## Run
@@ -67,9 +71,11 @@ python3 signer.py run --app http://<mac-ip>:3000 --confirm            # ask on t
 python3 signer.py run --app http://<mac-ip>:3000 --button 17          # wait for a button on GPIO17
 ```
 
-On start it POSTs its public key to `/api/device`. On localhost the app's relay is the contract
-admin and pairs the key onchain automatically. On a live chain the deployer calls `setSigner` (or you
-set `CHIP_PUBKEY_X/Y` in `app/packages/foundry/.env` before `yarn deploy`).
+On start it POSTs its public key and chip status to `/api/device`, then polls `/api/commands` for
+setup jobs and `/api/requests` for transfers to sign. Pairing is the Pair button on /setup (the relay
+calls `setSigner`; on localhost the relay is the contract admin). On a live chain either the deployer
+runs the Pair button with `RELAYER_PRIVATE_KEY` set to its key, or you put `CHIP_PUBKEY_X/Y` in
+`app/packages/foundry/.env` before `yarn deploy`.
 
 ## Notes
 

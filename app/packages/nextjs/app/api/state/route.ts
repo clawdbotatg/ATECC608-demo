@@ -19,9 +19,10 @@ export async function GET() {
       tokenBalance(address),
       relayerBalance(),
     ]);
-    const { device, requests } = readStore();
+    const { device, requests, commands } = readStore();
     const devicePaired =
-      !!device &&
+      !!device?.qx &&
+      !!device.qy &&
       signer.qx.toLowerCase() === device.qx.toLowerCase() &&
       signer.qy.toLowerCase() === device.qy.toLowerCase();
     return NextResponse.json({
@@ -37,6 +38,7 @@ export async function GET() {
       relayer: { address: relayerAddress(), balanceFormatted: formatEther(relayBal) },
       device: device ? { ...device, paired: devicePaired } : undefined,
       requests,
+      commands,
       now: Date.now(),
     });
   } catch (e: any) {

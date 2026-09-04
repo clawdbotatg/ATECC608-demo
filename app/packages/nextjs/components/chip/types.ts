@@ -1,4 +1,4 @@
-import type { DeviceInfo, TransferRequest } from "~~/services/chip/types";
+import type { Command, DeviceInfo, TransferRequest } from "~~/services/chip/types";
 
 export type AppState = {
   chain: { id: number; name: string; isLocal: boolean };
@@ -13,6 +13,7 @@ export type AppState = {
   relayer: { address: `0x${string}`; balanceFormatted: string };
   device?: DeviceInfo & { paired: boolean };
   requests: TransferRequest[];
+  commands: Command[];
   now: number;
 };
 

@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-One-time ATECC608 provisioning: write Microchip's reference config, lock the config zone,
-generate a P-256 key in slot 0, lock the data zone.
+CLI fallback for what the app's /setup page does over the command queue: write Microchip's
+reference config, lock the CONFIG zone, generate a P-256 key in slot 0. The DATA zone is left
+unlocked (pass --lock-data to lock it too) so GenKey can be re-run later.
 
     python3 provision.py --i2c-addr 0x60          # dry run: shows what it would do
     python3 provision.py --i2c-addr 0x60 --yes    # actually provision
 
-*** IRREVERSIBLE. Locking is permanent. A locked chip cannot be reconfigured. ***
+*** Config lock is IRREVERSIBLE. Every chip in use is config-locked; it is normal. ***
 Breakout boards from Adafruit/SparkFun ship UNLOCKED and must be provisioned once.
 Microchip TrustFLEX / Trust&Go (TNG) parts ship locked with a key already in slot 0 — skip this script.
 
@@ -42,7 +43,8 @@ def main():
     p.add_argument("--i2c-bus", type=int, default=1)
     p.add_argument("--i2c-addr", default="0x60", help="7-bit address (0x60 for most breakouts)")
     p.add_argument("--slot", type=int, default=0)
-    p.add_argument("--yes", action="store_true", help="really write and LOCK the chip")
+    p.add_argument("--yes", action="store_true", help="really write and LOCK the config zone")
+    p.add_argument("--lock-data", action="store_true", help="also lock the data zone (then no more GenKey)")
     args = p.parse_args()
 
     import cryptoauthlib as cal
@@ -66,18 +68,20 @@ def main():
     check(cal, cal.atcab_is_locked(cal.LOCK_ZONE_DATA, data_locked), "is_locked(data)")
     print(f"config zone locked: {bool(cfg_locked.value)}   data zone locked: {bool(data_locked.value)}")
 
-    if bool(cfg_locked.value) and bool(data_locked.value):
+    if bool(cfg_locked.value):
         pub = bytearray(64)
-        check(cal, cal.atcab_get_pubkey(args.slot, pub), "get_pubkey")
-        print(f"already provisioned. slot {args.slot} public key:\n  qx 0x{pub[:32].hex()}\n  qy 0x{pub[32:].hex()}")
-        return
+        if cal.atcab_get_pubkey(args.slot, pub) == cal.ATCA_SUCCESS:
+            print(f"already provisioned. slot {args.slot} public key:\n  qx 0x{pub[:32].hex()}\n  qy 0x{pub[32:].hex()}")
+            print("use the app's /setup page (Generate key) to make a new one.")
+            return
 
     if not args.yes:
         print("\nDRY RUN. Would:")
         if not bool(cfg_locked.value):
             print("  1. write the 128-byte reference config   2. LOCK the config zone (permanent)")
-        if not bool(data_locked.value):
-            print(f"  3. GenKey -> new P-256 key in slot {args.slot}   4. LOCK the data zone (permanent)")
+        print(f"  3. GenKey -> new P-256 key in slot {args.slot}")
+        if args.lock_data and not bool(data_locked.value):
+            print("  4. LOCK the data zone (permanent, --lock-data)")
         print("Re-run with --yes to do it.")
         return
 
@@ -90,7 +94,7 @@ def main():
     check(cal, cal.atcab_genkey(args.slot, pub), f"genkey slot {args.slot}")
     print(f"generated P-256 key in slot {args.slot}")
 
-    if not bool(data_locked.value):
+    if args.lock_data and not bool(data_locked.value):
         check(cal, cal.atcab_lock_data_zone(), "lock_data_zone")
         print("data zone locked")
 
