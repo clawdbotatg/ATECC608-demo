@@ -14,7 +14,7 @@ Usage:
   python3 signer.py pubkey [--mock]                       print the signer public key
   python3 signer.py sign --digest 0x... [--mock]          sign one digest (used by the Foundry tests via ffi)
   python3 signer.py run --app http://<mac-ip>:3000        daemon: announce, poll, sign, repeat
-      [--mock] [--confirm | --button 17] [--name "pi-atecc608"] [--once]
+      [--mock] [--confirm | --button 17] [--name "pi-atecc608"] [--once] [--allow-lock]
 
 Hardware options: --i2c-bus 1  --i2c-addr 0x60 (7-bit, 0x35 for TrustFLEX/TNG parts)  --slot 0
 """
@@ -124,16 +124,32 @@ class AteccSigner:
         0x1C, 0x00, 0x1C, 0x00, 0x38, 0x00, 0x30, 0x00, 0x3C, 0x00, 0x3C, 0x00, 0x32, 0x00, 0x30, 0x00,
     ])
 
+    # zone ids for atcab_is_locked / atcab_lock_* (atca_basic.h)
+    LOCK_ZONE_CONFIG = 0x00
+    LOCK_ZONE_DATA = 0x01
+
     def __init__(self, bus=1, addr7=0x60, slot=0):
         import cryptoauthlib as cal
 
         self.cal = cal
         self.slot = slot
         cal.load_cryptoauthlib()
+        # the python package moved ATCA_SUCCESS under Status in newer releases
+        self.SUCCESS = getattr(cal, "ATCA_SUCCESS", None)
+        if self.SUCCESS is None:
+            self.SUCCESS = cal.Status.ATCA_SUCCESS
         cfg = cal.cfg_ateccx08a_i2c_default()
         cfg.cfg.atcai2c.bus = bus
-        # cryptoauthlib stores the address in 8-bit form (7-bit address << 1)
-        cfg.cfg.atcai2c.address = addr7 << 1
+        # cryptoauthlib stores the address in 8-bit form (7-bit address << 1). Newer bindings keep
+        # it in a union `u` (address / slave_address); older ones expose it directly.
+        i2c = cfg.cfg.atcai2c
+        target = i2c.u if hasattr(i2c, "u") else i2c
+        for field in ("address", "slave_address"):
+            if hasattr(target, field):
+                setattr(target, field, addr7 << 1)
+                break
+        else:
+            raise RuntimeError("cannot find the i2c address field in this cryptoauthlib build")
         cfg.devtype = cal.get_device_type_id("ATECC608")
         self._check(cal.atcab_init(cfg), f"atcab_init (check wiring, i2cdetect -y {bus}, --i2c-addr)")
         rev = bytearray(4)
@@ -144,8 +160,8 @@ class AteccSigner:
         self.serial = sn.hex()
 
     def _check(self, status, what):
-        if status != self.cal.ATCA_SUCCESS:
-            raise RuntimeError(f"{what} failed: 0x{status:02X}")
+        if status != self.SUCCESS:
+            raise RuntimeError(f"{what} failed: 0x{status & 0xFF:02X}")
 
     def _locked(self, zone) -> bool:
         ref = self.cal.AtcaReference(False)
@@ -153,8 +169,8 @@ class AteccSigner:
         return bool(ref.value)
 
     def status(self) -> dict:
-        cfg = self._locked(self.cal.LOCK_ZONE_CONFIG)
-        data = self._locked(self.cal.LOCK_ZONE_DATA)
+        cfg = self._locked(self.LOCK_ZONE_CONFIG)
+        data = self._locked(self.LOCK_ZONE_DATA)
         has_key = False
         if cfg:
             try:
@@ -172,14 +188,14 @@ class AteccSigner:
         }
 
     def pubkey(self) -> bytes:
-        if not self._locked(self.cal.LOCK_ZONE_CONFIG):
+        if not self._locked(self.LOCK_ZONE_CONFIG):
             raise RuntimeError("config zone is not locked; the chip has no usable key yet (Setup page, step 1)")
         pub = bytearray(64)
         self._check(self.cal.atcab_get_pubkey(self.slot, pub), "atcab_get_pubkey")
         return bytes(pub)
 
     def genkey(self) -> bytes:
-        if not self._locked(self.cal.LOCK_ZONE_CONFIG):
+        if not self._locked(self.LOCK_ZONE_CONFIG):
             raise RuntimeError("lock the config zone first")
         pub = bytearray(64)
         self._check(self.cal.atcab_genkey(self.slot, pub), f"atcab_genkey slot {self.slot}")
@@ -187,7 +203,7 @@ class AteccSigner:
 
     def lock_config(self) -> str:
         """Write the reference config (if still writable) and lock the config zone. Permanent."""
-        if self._locked(self.cal.LOCK_ZONE_CONFIG):
+        if self._locked(self.LOCK_ZONE_CONFIG):
             return "config zone already locked"
         self._check(self.cal.atcab_write_config_zone(self.CONFIG), "atcab_write_config_zone")
         self._check(self.cal.atcab_lock_config_zone(), "atcab_lock_config_zone")
@@ -282,6 +298,8 @@ def cmd_run(args):
                 result = {"qx": "0x" + pub[:32].hex(), "qy": "0x" + pub[32:].hex()}
                 print(f"  new key\n  qx {result['qx']}\n  qy {result['qy']}")
             elif ctype == "lock-config":
+                if not args.allow_lock:
+                    raise RuntimeError("refused: start signer.py with --allow-lock to permit locking the config zone")
                 result = {"message": signer.lock_config()}
                 print(f"  {result['message']}")
             else:
@@ -371,6 +389,7 @@ def main():
     rp.add_argument("--confirm", action="store_true", help="ask on the terminal before signing")
     rp.add_argument("--button", type=int, help="wait for a button press on this BCM GPIO before signing")
     rp.add_argument("--once", action="store_true", help="exit after handling one batch")
+    rp.add_argument("--allow-lock", action="store_true", help="permit the (permanent) lock-config command from the app")
     args = p.parse_args()
     for k, v in defaults.items():
         if not hasattr(args, k):
