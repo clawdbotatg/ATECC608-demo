@@ -13,6 +13,8 @@ contract -> P256.verify(digest, r, s, chipPubKey) -> USDS.transfer(to, amount)
 
 ## It ran on mainnet
 
+Austin's thread: https://x.com/austingriffith/status/2096266891748860298
+
 ![5 USDS to atg.eth, signed by the chip, settled on Ethereum mainnet](docs/mainnet-send.png)
 
 2026-09-04. Vault [`0x0336aD6afc8bE414D6BD1f7A16caEb14BCCd16e9`](https://etherscan.io/address/0x0336aD6afc8bE414D6BD1f7A16caEb14BCCd16e9)
@@ -23,6 +25,7 @@ contract -> P256.verify(digest, r, s, chipPubKey) -> USDS.transfer(to, amount)
 | Deploy `ChipAccount` with the chip's key baked in | [`0xa5d10ea4…`](https://etherscan.io/tx/0xa5d10ea42dfff94a6437ace48cc1440b21749dbe37e171863e8a79347369c805) | `yarn deploy --network mainnet`, 0.000056 ETH |
 | 10 USDS into the vault | [`0xb85ad3ff…`](https://etherscan.io/tx/0xb85ad3fff1585504f6866d538abb0653b7e7293c4de7a9e2871d9b5a1a94bf88) | plain ERC-20 transfer from a wallet |
 | **5 USDS to atg.eth, signed by the ATECC608** | [`0x7a977bea…`](https://etherscan.io/tx/0x7a977bea22e648d4173fc76cdfce2242ede6ff525b3c15590ef109561aa94b9a) | chip signed in 106 ms, 1.8 s after the click; 81,715 gas paid by the relay; confirmed 14 s after the click |
+| 5 USDS (nonce 2) and **100 USDS** (nonce 3) to atg.eth, next morning | [`0x97748056…`](https://etherscan.io/tx/0x977480563b6c2b0c65385fed36885cafeb24eb5ee4028b3eb7bc97f0649fa791) · [`0xfa6d5a86…`](https://etherscan.io/tx/0xfa6d5a8624f29287c35708fc0f2265cc948f06acd4e1156ead6747a405d81610) | chip signed in 98 ms; the $100 one is the tweet |
 | **5 more USDS to atg.eth** (nonce 1) | [`0xae1ddc09…`](https://etherscan.io/tx/0xae1ddc09c701ef1bfa2d50ef818e07516a8979bdc312c9f5f6ad4e990fd84ddc) | chip signed 0.8 s after the click; 81,715 gas; confirmed in 33 s (waited a block) |
 
 The second send, mid-flight and done. Same key, next nonce, no setup:

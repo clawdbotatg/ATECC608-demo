@@ -16,12 +16,12 @@ happened. The private key has never existed outside the chip.
 
 | Thing | State | Where |
 |---|---|---|
-| Vault contract | live, verified, ~125 USDS inside, nonce 2 | mainnet `0x0336aD6afc8bE414D6BD1f7A16caEb14BCCd16e9` |
+| Vault contract | live, verified, ~19.5 USDS inside, nonce 4 | mainnet `0x0336aD6afc8bE414D6BD1f7A16caEb14BCCd16e9` |
 | Token | real USDS, 18 decimals | `0xdC035D45d973E3EC169d2276DDab16f1e407384F` |
 | Relay / deployer / contract admin | one EOA, ~0.0029 ETH | `0x7FE7f508A267BF45D2D161F244DbB12743e2cf49`, foundry keystore `atecc-relay` |
 | Chip #1 | ATECC608A, config zone LOCKED, data zone unlocked, P-256 key in slot 0, paired to the vault | on the Pi, I2C 0x60, serial `01235e6763cc8d97ee` |
 | Chip #2 | blank, unlocked. **Do not lock without asking Austin.** | in Austin's drawer |
-| Pi signer | **STOPPED on purpose** for the overnight steal-me test | `~/ATECC608-demo/pi` on the Pi |
+| Pi signer | running (restarted 2026-09-05 morning) | `~/ATECC608-demo/pi` on the Pi |
 | Next.js app | running on Austin's Mac, mainnet mode | http://localhost:3000, LAN http://<mac-ip>:3000 |
 | anvil | may still be running from earlier local testing, harmless | port 8545 on the Mac |
 | Repo | all pushed, tree clean | github.com/clawdbotatg/ATECC608-demo |
@@ -212,3 +212,6 @@ lock-config -> `POST /api/commands/{id}/result` -> re-announces via `POST /api/d
 - 18:49 second send, tx `0xae1ddc09…`
 - 20:06 Transfers list switched to onchain events
 - 20:10 audit #814 logged, ~125 USDS left overnight, Pi signer stopped
+- 2026-09-05 09:30 Pi signer restarted; 5 USDS and 100 USDS sends (nonces 2, 3). Overnight: nothing stolen. Tweet: https://x.com/austingriffith/status/2096266891748860298
+
+Austin wants a full article on this someday. Keep README, pi/README, HANDOFF, and docs/ current.
