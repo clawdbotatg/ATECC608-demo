@@ -111,6 +111,31 @@ either way; the tests run at ~110k gas per transfer.
 | `pi/provision.py` | CLI fallback for the setup steps (config lock + GenKey; data zone left unlocked) |
 | `pi/README.md` | **the fresh-chip guide**: what locking means, every step with real outputs, every error |
 
+## Audit
+
+Job #814 from [onedollaraudit.com](http://onedollaraudit.com/audit/814) (AI review, 2026-09-05), run against
+the verified mainnet contract: [report](https://leftclaw.services/result/814.html) ·
+[IPFS copy](https://bafkreietio65vfelp3t5pkhxzts66gieq3ott7wt4dqrznbnrvixitiatu.ipfs.community.bgipfs.com/).
+
+Result: 1 High, 3 Medium, 6 Low, 4 Info. **No path found for an outside attacker to take funds.** Every
+finding is about funds getting stuck or about trusting the admin key. Our read, and what we did:
+
+| # | Sev | Finding | Status |
+|---|-----|---------|--------|
+| 1 | High | If the token pauses or blocklists the vault, funds are stuck (no admin rescue path). | Accepted for the demo. A rescue path is an admin backdoor, which is the opposite of the point. |
+| 2 | Med | Admin can `setSigner` to any key and drain. | True by design: admin = deployer = relay keystore on one laptop. For real money, admin should be a multisig or burned (`setAdmin` to a dead address). |
+| 3 | Med | `setSigner` doesn't check the key is on the curve; a bad key bricks transfers until re-paired. | Accepted; re-pairing fixes it. |
+| 4 | Med | Signatures made for a future nonce could replay after re-pairing back to the same chip. | Accepted; the app never pre-signs future nonces. |
+| 5-10 | Low | `isValidTransfer` preview omits checks; ETH sent to the contract is stuck; fixed deadline; event logs requested not received amount; no reentrancy guard; single-step `setAdmin`. | Accepted for the demo. |
+| 11-14 | Info | evm version note, precompile trust, missing constructor event, no pause. | No action. |
+
+The report's own caveat applies: an AI review "can never verify the complete absence of vulnerabilities."
+
+**Overnight test (2026-09-04):** ~125 USDS left in the vault on mainnet with the Pi signer *stopped*.
+With the signer up, anyone who can reach the app on the LAN could queue a transfer and the chip would
+sign it; the demo app has no auth on `/api/requests`. That is the actual attack surface of this setup,
+not the contract.
+
 ## Trust model
 
 - The chip key is the only thing that can spend the vault. The relay just pays gas and can only refuse.
@@ -118,6 +143,8 @@ either way; the tests run at ~110k gas per transfer.
   Replays and tampering fail (`test_replayIsRejected`, `test_tamperedAmountIsRejected`, …).
 - `admin` (the deployer) can re-pair a new chip key. That is a demo convenience; for real money hand it
   to a multisig or burn it.
+- The app has no auth. Whoever can reach it can ask the chip to sign. Run the signer with `--confirm`
+  or `--button` to require a physical yes, or keep the app off the network.
 
 ## Live chain (what we did for mainnet)
 
