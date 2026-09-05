@@ -11,6 +11,24 @@ relay    -> ChipAccount.executeTransfer(...)   (relay pays gas, holds nothing)
 contract -> P256.verify(digest, r, s, chipPubKey) -> USDS.transfer(to, amount)
 ```
 
+## It ran on mainnet
+
+![5 USDS to atg.eth, signed by the chip, settled on Ethereum mainnet](docs/mainnet-send.png)
+
+2026-09-04. Vault [`0x0336aD6afc8bE414D6BD1f7A16caEb14BCCd16e9`](https://etherscan.io/address/0x0336aD6afc8bE414D6BD1f7A16caEb14BCCd16e9)
+(verified source), real [USDS](https://etherscan.io/token/0xdC035D45d973E3EC169d2276DDab16f1e407384F).
+
+| Step | Tx | Notes |
+|------|----|-------|
+| Deploy `ChipAccount` with the chip's key baked in | [`0xa5d10ea4…`](https://etherscan.io/tx/0xa5d10ea42dfff94a6437ace48cc1440b21749dbe37e171863e8a79347369c805) | `yarn deploy --network mainnet`, 0.000056 ETH |
+| 10 USDS into the vault | [`0xb85ad3ff…`](https://etherscan.io/tx/0xb85ad3fff1585504f6866d538abb0653b7e7293c4de7a9e2871d9b5a1a94bf88) | plain ERC-20 transfer from a wallet |
+| **5 USDS to atg.eth, signed by the ATECC608** | [`0x7a977bea…`](https://etherscan.io/tx/0x7a977bea22e648d4173fc76cdfce2242ede6ff525b3c15590ef109561aa94b9a) | chip signed in 106 ms, 1.8 s after the click; 81,715 gas paid by the relay; confirmed 14 s after the click |
+
+Chip: ATECC608A on an Adafruit STEMMA QT breakout, Raspberry Pi 3 B+, serial `01235e6763cc8d97ee`,
+key in slot 0. The private key has never existed outside that chip. The relay
+(`0x7FE7f508A267BF45D2D161F244DbB12743e2cf49`) is a throwaway foundry keystore account that holds
+0.003 ETH for gas and can't spend the vault.
+
 Two folders:
 
 - **`app/`** — Scaffold-ETH 2 (Foundry flavour, from ethskills.com). Contracts, tests, Next.js UI, and
@@ -94,14 +112,44 @@ either way; the tests run at ~110k gas per transfer.
 - `admin` (the deployer) can re-pair a new chip key. That is a demo convenience; for real money hand it
   to a multisig or burn it.
 
-## Live chain
+## Live chain (what we did for mainnet)
 
-1. `yarn generate` / `yarn account:import`, fund the deployer.
-2. In `app/packages/foundry/.env`: `USDS_ADDRESS=<token>`, optionally `CHIP_PUBKEY_X/Y` from
-   `python3 pi/signer.py pubkey`.
-3. `yarn deploy --network <net>` and `yarn verify --network <net>`.
-4. In `app/packages/nextjs/.env.local`: `RELAYER_PRIVATE_KEY=<funded key>` (the deployer's if you want
-   auto-pairing), `USDS_ADDRESS=<token>`.
-5. `targetNetworks` in `scaffold.config.ts`, then `yarn start`.
+One account is deployer, contract admin, and relay. It lives as an encrypted foundry keystore; no raw
+key in any file.
 
-The relay's key stays in `.env.local` and is gitignored. Never put it anywhere else.
+```bash
+# 1. account. Password goes in a file only; the key never prints.
+PW=$(openssl rand -hex 24); umask 077; printf '%s' "$PW" > ~/.foundry/keystores/atecc-relay.password.txt
+cast wallet new ~/.foundry/keystores --unsafe-password "$PW"     # prints the address; rename the file to atecc-relay
+# send it ~0.003 ETH
+
+# 2. app/packages/foundry/.env
+USDS_ADDRESS=0xdC035D45d973E3EC169d2276DDab16f1e407384F
+CHIP_PUBKEY_X=0x…   CHIP_PUBKEY_Y=0x…      # from the Setup page or `python3 pi/signer.py pubkey`
+
+# 3. deploy + verify with Scaffold-ETH. ETH_PASSWORD is the password *file* path.
+cd app
+ETH_PASSWORD=$HOME/.foundry/keystores/atecc-relay.password.txt yarn deploy --network mainnet --keystore atecc-relay
+yarn verify --network mainnet
+
+# 4. app/packages/nextjs/.env.local
+NEXT_PUBLIC_TARGET_NETWORK=mainnet
+RELAYER_KEYSTORE=atecc-relay
+RELAYER_KEYSTORE_PASSWORD_FILE=/Users/you/.foundry/keystores/atecc-relay.password.txt
+USDS_ADDRESS=0xdC035D45d973E3EC169d2276DDab16f1e407384F
+
+yarn dev -p 3000
+```
+
+Send USDS to the vault address the deploy printed. The Pi needs no change: the EIP-712 domain picks up
+chain id 1 from the app. Type a recipient and amount, Send to chip, done.
+
+Because the deploy baked in `CHIP_PUBKEY_X/Y`, no Pair step was needed. Generate a new key later and
+the Pair button still works: the relay is the admin.
+
+Gotcha: in foundry 1.7 the env var `ETH_PASSWORD` is the path to a password *file*, not the password.
+Passing the password itself makes foundry print it in an error. Rotate with `cast wallet change-password`
+if that happens (we did).
+
+Everything secret is gitignored: `.env`, `.env.local`, the keystore and its password file live in
+`~/.foundry/keystores`.
