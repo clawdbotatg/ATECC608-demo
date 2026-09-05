@@ -23,6 +23,13 @@ contract -> P256.verify(digest, r, s, chipPubKey) -> USDS.transfer(to, amount)
 | Deploy `ChipAccount` with the chip's key baked in | [`0xa5d10ea4…`](https://etherscan.io/tx/0xa5d10ea42dfff94a6437ace48cc1440b21749dbe37e171863e8a79347369c805) | `yarn deploy --network mainnet`, 0.000056 ETH |
 | 10 USDS into the vault | [`0xb85ad3ff…`](https://etherscan.io/tx/0xb85ad3fff1585504f6866d538abb0653b7e7293c4de7a9e2871d9b5a1a94bf88) | plain ERC-20 transfer from a wallet |
 | **5 USDS to atg.eth, signed by the ATECC608** | [`0x7a977bea…`](https://etherscan.io/tx/0x7a977bea22e648d4173fc76cdfce2242ede6ff525b3c15590ef109561aa94b9a) | chip signed in 106 ms, 1.8 s after the click; 81,715 gas paid by the relay; confirmed 14 s after the click |
+| **5 more USDS to atg.eth** (nonce 1) | [`0xae1ddc09…`](https://etherscan.io/tx/0xae1ddc09c701ef1bfa2d50ef818e07516a8979bdc312c9f5f6ad4e990fd84ddc) | chip signed 0.8 s after the click; 81,715 gas; confirmed in 33 s (waited a block) |
+
+The second send, mid-flight and done. Same key, next nonce, no setup:
+
+| relaying | confirmed |
+|---|---|
+| ![relaying](docs/mainnet-send-2-relaying.png) | ![confirmed](docs/mainnet-send-2-confirmed.png) |
 
 Chip: ATECC608A on an Adafruit STEMMA QT breakout, Raspberry Pi 3 B+, serial `01235e6763cc8d97ee`,
 key in slot 0. The private key has never existed outside that chip. The relay
