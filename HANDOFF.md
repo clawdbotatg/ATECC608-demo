@@ -22,16 +22,16 @@ happened. The private key has never existed outside the chip.
 | Chip #1 | ATECC608A, config zone LOCKED, data zone unlocked, P-256 key in slot 0, paired to the vault | on the Pi, I2C 0x60, serial `01235e6763cc8d97ee` |
 | Chip #2 | blank, unlocked. **Do not lock without asking Austin.** | in Austin's drawer |
 | Pi signer | **STOPPED on purpose** for the overnight steal-me test | `~/ATECC608-demo/pi` on the Pi |
-| Next.js app | running on Austin's Mac, mainnet mode | http://localhost:3000, LAN http://192.168.68.63:3000 |
+| Next.js app | running on Austin's Mac, mainnet mode | http://localhost:3000, LAN http://<mac-ip>:3000 |
 | anvil | may still be running from earlier local testing, harmless | port 8545 on the Mac |
 | Repo | all pushed, tree clean | github.com/clawdbotatg/ATECC608-demo |
 | Audit | onedollaraudit #814, no outside theft path | linked in README, table of findings + responses |
 
 ## Machines and access
 
-- **Mac** (this box): repo at `~/clawd/clawd-harness/projects/ATECC608-demo`. LAN IP was `192.168.68.63`
+- **Mac** (this box): repo at `~/clawd/clawd-harness/projects/ATECC608-demo`. LAN IP: `ipconfig getifaddr en0`
   (check with `ipconfig getifaddr en0`).
-- **Pi**: `ssh cell@192.168.68.71` (hostname `cell.local`). Key login works from the Mac, no password
+- **Pi**: `ssh <pi-user>@<pi-ip>` (hostname on your LAN). Key login works from the Mac, no password
   needed. There is an account password; it is NOT written anywhere and must never be. `sudo` needs it,
   so avoid sudo. `pip3 install --user --break-system-packages` works without it.
 - Repo clone on the Pi: `~/ATECC608-demo`. Keep it in sync with `git pull` after pushing.
@@ -62,8 +62,8 @@ cd ~/clawd/clawd-harness/projects/ATECC608-demo/app/packages/nextjs
 env -u PORT yarn dev -p 3000          # the harness shell exports PORT=8787; must override
 
 # 2. signer on the Pi
-ssh cell@192.168.68.71 '~/ATECC608-demo/pi/start.sh http://192.168.68.63:3000 --i2c-addr 0x60'
-ssh cell@192.168.68.71 'tail -f ~/ATECC608-demo/pi/signer.log'
+ssh <pi-user>@<pi-ip> '~/ATECC608-demo/pi/start.sh http://<mac-ip>:3000 --i2c-addr 0x60'
+ssh <pi-user>@<pi-ip> 'tail -f ~/ATECC608-demo/pi/signer.log'
 
 # 3. browser: http://localhost:3000  -> atg.eth, 5, Send to chip
 ```
