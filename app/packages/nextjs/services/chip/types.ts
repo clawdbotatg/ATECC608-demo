@@ -2,6 +2,8 @@ export type RequestStatus = "pending" | "signed" | "relaying" | "confirmed" | "f
 
 export type TransferRequest = {
   id: string;
+  chainId: number;
+  account: `0x${string}`; // the ChipAccount this request is for
   createdAt: number;
   updatedAt: number;
   status: RequestStatus;

@@ -1,12 +1,23 @@
+import { targetChain } from "./chain";
 import { Command, Store, TransferRequest } from "./types";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
+import deployedContracts from "~~/contracts/deployedContracts";
+import { GenericContractsDeclaration } from "~~/utils/scaffold-eth/contract";
 
 /**
  * Tiny JSON-file queue. One writer (this server), a handful of rows. Lives in .chip/ (gitignored)
  * so it survives Next.js hot reloads and restarts. Not a database — it is a demo.
+ *
+ * One file per (chain id, ChipAccount address), so the list you see is only ever this deployment's:
+ * switching from localhost to mainnet (or redeploying) starts a fresh queue.
  */
-const FILE = process.env.CHIP_STORE_PATH || join(process.cwd(), ".chip", "store.json");
+function storeFile(): string {
+  if (process.env.CHIP_STORE_PATH) return process.env.CHIP_STORE_PATH;
+  const addr = (deployedContracts as GenericContractsDeclaration)[targetChain.id]?.ChipAccount?.address ?? "undeployed";
+  return join(process.cwd(), ".chip", `store-${targetChain.id}-${addr.toLowerCase()}.json`);
+}
+const FILE = storeFile();
 const MAX_REQUESTS = 200;
 
 let cache: Store | undefined;

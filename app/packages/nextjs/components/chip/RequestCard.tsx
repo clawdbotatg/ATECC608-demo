@@ -88,15 +88,27 @@ export const RequestCard = ({ r, now }: { r: TransferRequest; now: number }) => 
           <div className="flex gap-2">
             <span className="w-16 shrink-0 opacity-60">nonce</span>
             <span>{r.nonce}</span>
-            <span className="opacity-60 ml-4">deadline</span>
-            <span>{new Date(r.deadline * 1000).toLocaleTimeString()}</span>
+            {r.deadline > 0 && (
+              <>
+                <span className="opacity-60 ml-4">deadline</span>
+                <span>{new Date(r.deadline * 1000).toLocaleTimeString()}</span>
+              </>
+            )}
+            {r.blockNumber && (
+              <>
+                <span className="opacity-60 ml-4">block</span>
+                <span>{r.blockNumber}</span>
+              </>
+            )}
           </div>
-          <div className="flex gap-2">
-            <span className="w-16 shrink-0 opacity-60">digest</span>
-            <span className="break-all" title={r.digest}>
-              {r.digest}
-            </span>
-          </div>
+          {r.digest && r.digest.length > 2 && (
+            <div className="flex gap-2">
+              <span className="w-16 shrink-0 opacity-60">digest</span>
+              <span className="break-all" title={r.digest}>
+                {r.digest}
+              </span>
+            </div>
+          )}
           {r.signature && (
             <>
               <div className="flex gap-2">

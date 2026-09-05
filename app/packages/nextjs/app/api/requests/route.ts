@@ -99,6 +99,8 @@ export async function POST(req: NextRequest) {
   const now = Date.now();
   const request: TransferRequest = {
     id: `${now.toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    chainId: targetChain.id,
+    account: account as `0x${string}`,
     createdAt: now,
     updatedAt: now,
     status: "pending",

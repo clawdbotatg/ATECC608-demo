@@ -4,10 +4,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Address, AddressInput } from "@scaffold-ui/components";
 import type { NextPage } from "next";
+import { formatUnits } from "viem";
 import { CpuChipIcon, PaperAirplaneIcon } from "@heroicons/react/24/outline";
 import { RequestCard } from "~~/components/chip/RequestCard";
 import { type AppState, ago, short, usd } from "~~/components/chip/types";
-import { useTargetNetwork } from "~~/hooks/scaffold-eth";
+import { useScaffoldEventHistory, useTargetNetwork } from "~~/hooks/scaffold-eth";
+import type { TransferRequest } from "~~/services/chip/types";
 import { notification } from "~~/utils/scaffold-eth";
 
 const POLL_MS = 1500;
@@ -22,6 +24,15 @@ const Home: NextPage = () => {
   const typedName = useRef<string>(DEFAULT_TO); // last thing the user typed (an ENS name survives resolution)
   const [amount, setAmount] = useState(DEFAULT_AMOUNT);
   const [sending, setSending] = useState(false);
+
+  // The chain is the record: every settled send is a TransferExecuted event on ChipAccount, read from
+  // the deploy block forward. The app's local queue only knows about rows that can't be onchain yet.
+  const { data: events } = useScaffoldEventHistory({
+    contractName: "ChipAccount",
+    eventName: "TransferExecuted",
+    watch: true,
+    blockData: true,
+  });
 
   const refresh = useCallback(async () => {
     try {
@@ -77,6 +88,53 @@ const Home: NextPage = () => {
 
   const device = state?.device;
   const now = state?.now ?? 0;
+
+  // Merge: onchain events (authoritative) + local in-flight rows (pending / signed / relaying / failed).
+  const rows: TransferRequest[] = (() => {
+    if (!state) return [];
+    const local = state.requests;
+    const byTx = new Map(local.filter(r => r.txHash).map(r => [r.txHash!.toLowerCase(), r]));
+    const onchain: TransferRequest[] = (events ?? []).map(ev => {
+      const a = ev.args as {
+        token: `0x${string}`;
+        to: `0x${string}`;
+        amount: bigint;
+        nonce: bigint;
+        relayer: `0x${string}`;
+      };
+      const txHash = ev.transactionHash as `0x${string}`;
+      const mine = byTx.get(txHash.toLowerCase());
+      const block = (ev as { blockData?: { timestamp?: bigint } | null }).blockData;
+      const ts = block?.timestamp ? Number(block.timestamp) * 1000 : (mine?.createdAt ?? 0);
+      return {
+        id: `tx-${txHash}`,
+        chainId: state.chain.id,
+        account: state.account.address,
+        createdAt: mine?.createdAt ?? ts,
+        updatedAt: mine?.updatedAt ?? ts,
+        status: "confirmed",
+        token: a.token,
+        tokenSymbol: state.token.symbol,
+        tokenDecimals: state.token.decimals,
+        to: a.to,
+        toName: mine?.toName,
+        amount: a.amount.toString(),
+        amountFormatted: formatUnits(a.amount, state.token.decimals),
+        nonce: a.nonce.toString(),
+        deadline: mine?.deadline ?? 0,
+        digest: mine?.digest ?? ("0x" as `0x${string}`),
+        signature: mine?.signature,
+        signedAt: mine?.signedAt,
+        txHash,
+        blockNumber: ev.blockNumber?.toString(),
+        gasUsed: mine?.gasUsed,
+        relayer: a.relayer,
+      };
+    });
+    const seen = new Set(onchain.map(r => r.txHash!.toLowerCase()));
+    const inflight = local.filter(r => !(r.txHash && seen.has(r.txHash.toLowerCase())));
+    return [...inflight, ...onchain].sort((a, b) => b.createdAt - a.createdAt);
+  })();
   const deviceOnline = !!device && now - device.lastSeen < 45_000;
 
   return (
@@ -238,9 +296,17 @@ const Home: NextPage = () => {
 
       {/* queue */}
       <section className="w-full space-y-3">
-        <h2 className="text-lg font-bold">Transfers</h2>
-        {state && state.requests.length === 0 && <p className="opacity-60 text-sm">Nothing yet. Send one above.</p>}
-        {state?.requests.map(r => (
+        <div className="flex flex-wrap items-baseline gap-x-3">
+          <h2 className="text-lg font-bold m-0">Transfers</h2>
+          {state && (
+            <span className="text-xs opacity-60">
+              {events?.length ?? 0} onchain · TransferExecuted events from {short(state.account.address, 6)} on{" "}
+              {state.chain.name}
+            </span>
+          )}
+        </div>
+        {state && rows.length === 0 && <p className="opacity-60 text-sm">Nothing yet. Send one above.</p>}
+        {rows.map(r => (
           <RequestCard key={r.id} r={r} now={now} />
         ))}
       </section>
